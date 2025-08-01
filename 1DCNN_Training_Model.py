@@ -6,11 +6,8 @@ from torchvision import transforms, models
 from PIL import Image
 
 # ======== CONFIG ========
-DATASET_DIR = "Gesture_Dataset_Dynamic"
-SEQUENCE_LENGTH = 40
-IMAGE_SIZE = 224
-BATCH_SIZE = 4
-NUM_EPOCHS = 25
+from config import SEQUENCE_LENGTH, IMAGE_SIZE, BATCH_SIZE, NUM_EPOCHS, DATASET_PATHS
+DATASET_DIR = DATASET_PATHS['dynamic']
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ======== DATASET ========
@@ -56,7 +53,7 @@ class GestureDataset(Dataset):
 class CNNEncoder(nn.Module):
     def __init__(self):
         super().__init__()
-        base = models.mobilenet_v2(pretrained=True) #Loads pre-trained MobileNet Architecture from Torchvision Models
+        base = models.mobilenet_v2(weights='IMAGENET1K_V1') #Loads pre-trained MobileNet Architecture from Torchvision Models
         self.feature_extractor = base.features # Outputs high-level feature maps from input images, helps give leniency
         self.pool = nn.AdaptiveAvgPool2d((1, 1)) # Compresses feature maps, ensures that the model outputs a consistent feature size
 

@@ -11,18 +11,20 @@ import mediapipe as mp
 import os
 
 # === Static Gesture Setup ===
-STATIC_MODEL_PATH = "static_landmark_model.pkl"
-STATIC_ENCODER_PATH = "static_label_encoder.pkl"
+from config import MODEL_PATHS, SEQUENCE_LENGTH, IMAGE_SIZE, GESTURE_CONTROL, PLATFORM, PLATFORM_ACTIONS
 
-static_model = joblib.load(STATIC_MODEL_PATH)
-static_encoder: LabelEncoder = joblib.load(STATIC_ENCODER_PATH)
+# Check if model files exist
+for key, path in MODEL_PATHS.items():
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Required model file not found: {path}")
+
+static_model = joblib.load(MODEL_PATHS['static_model'])
+static_encoder: LabelEncoder = joblib.load(MODEL_PATHS['static_encoder'])
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1)
 
 # === Dynamic Gesture Setup ===
-SEQUENCE_LENGTH = 65
-IMAGE_SIZE = 224
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 transform = transforms.Compose([
@@ -62,7 +64,9 @@ class TemporalConvNet(torch.nn.Module):
         x = x.squeeze(-1)
         return self.classifier(x)
 
-def load_dynamic_model(path="gesture_temporal_cnn_model.pth"):
+def load_dynamic_model(path=None):
+    if path is None:
+        path = MODEL_PATHS['dynamic_model']
     checkpoint = torch.load(path, map_location=DEVICE)
     cnn = CNNEncoder().to(DEVICE)
     temporal = TemporalConvNet(num_classes=len(checkpoint['label_map'])).to(DEVICE)
@@ -127,14 +131,37 @@ def recognize_dynamic(cap, cnn, temporal, label_map):
 
 # === Trigger Action ===
 def trigger_action(gesture_seq):
-    if gesture_seq == ["TwoFingers", "Handup"]:
-        pyautogui.hotkey("command", "space")
-        pyautogui.write("chrome")
-        pyautogui.press("enter")
-        time.sleep(2)
-        pyautogui.write("https://www.youtube.com")
-        pyautogui.press("enter")
-        print("🎬 YouTube launched!")
+    if gesture_seq == GESTURE_CONTROL['action_sequence']:
+        # Cross-platform browser opening
+        if PLATFORM in PLATFORM_ACTIONS:
+            hotkey = PLATFORM_ACTIONS[PLATFORM]['open_browser']
+            pyautogui.hotkey(*hotkey)
+        else:
+            print(f"Platform {PLATFORM} not supported for actions")
+            return
+        
+        if PLATFORM == 'darwin':  # macOS
+            pyautogui.write("chrome")
+            pyautogui.press("enter")
+            time.sleep(2)
+            pyautogui.write("https://www.youtube.com")
+            pyautogui.press("enter")
+        elif PLATFORM == 'windows':
+            pyautogui.write("chrome")
+            pyautogui.press("enter")
+            time.sleep(2)
+            pyautogui.hotkey("ctrl", "l")
+            pyautogui.write("https://www.youtube.com")
+            pyautogui.press("enter")
+        elif PLATFORM == 'linux':
+            pyautogui.write("firefox")
+            pyautogui.press("enter")
+            time.sleep(2)
+            pyautogui.hotkey("ctrl", "l")
+            pyautogui.write("https://www.youtube.com")
+            pyautogui.press("enter")
+        
+        print("YouTube launched!")
 
 # === Main Control ===
 def run_gesture_control():
@@ -144,7 +171,7 @@ def run_gesture_control():
     sequence = []
     cnn, temporal, label_map = load_dynamic_model()
 
-    print("🎯 Gesture control started. Thumbsup switches mode. Combo: TwoFingers + Handup")
+    print("Gesture control started. Thumbsup switches mode. Combo: TwoFingers + Handup")
 
     while True:
         ret, frame = cap.read()
@@ -152,8 +179,8 @@ def run_gesture_control():
             continue
         frame = cv2.flip(frame, 1)
 
-        if cooldown_start and time.time() - cooldown_start < 8:
-            remaining = int(8 - (time.time() - cooldown_start))
+        if cooldown_start and time.time() - cooldown_start < GESTURE_CONTROL['cooldown_seconds']:
+            remaining = int(GESTURE_CONTROL['cooldown_seconds'] - (time.time() - cooldown_start))
             cv2.putText(frame, f"Cooldown: {remaining}s", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.imshow("Gesture Control", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -164,26 +191,26 @@ def run_gesture_control():
 
         if mode == "static":
             gesture = recognize_static(frame)
-            if gesture == "Thumbsup":
-                print(f"🔀 Thumbsup detected! Switching to DYNAMIC mode...")
+            if gesture == GESTURE_CONTROL['mode_switch_gesture']:
+                print(f"Mode switch detected! Switching to DYNAMIC mode...")
                 mode = "dynamic"
                 cooldown_start = time.time()
                 continue
             elif gesture:
-                print(f"🧊 Static Gesture: {gesture}")
+                print(f"Static Gesture: {gesture}")
                 sequence.append(gesture)
                 cooldown_start = time.time()
 
         elif mode == "dynamic":
             gesture = recognize_dynamic(cap, cnn, temporal, label_map)
             if gesture:
-                print(f"🌀 Dynamic Gesture: {gesture}")
+                print(f"Dynamic Gesture: {gesture}")
                 sequence.append(gesture)
                 cooldown_start = time.time()
             mode = "static"
 
         if len(sequence) == 2:
-            print(f"✅ Gesture Sequence: {sequence}")
+            print(f"Gesture Sequence: {sequence}")
             trigger_action(sequence)
             sequence = []
 
